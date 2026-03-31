@@ -179,14 +179,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#eef2f7",
     display: "flex",
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "flex-start",
     padding: "24px",
+    overflowX: "hidden",
   },
   wrapper: {
     width: "100%",
     maxWidth: "1040px",
     display: "grid",
-    gridTemplateColumns: "1fr 440px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
     background: "#ffffff",
     borderRadius: "24px",
     overflow: "hidden",
@@ -201,12 +202,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: "center",
   },
   brand: {
-    fontSize: "42px",
+    fontSize: "clamp(24px, 5vw, 42px)",
     margin: 0,
     fontWeight: 800,
   },
   leftTitle: {
-    fontSize: "30px",
+    fontSize: "clamp(18px, 3vw, 30px)",
     marginTop: "16px",
     marginBottom: "12px",
   },
@@ -219,6 +220,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   card: {
     padding: "36px 32px",
     background: "#ffffff",
+    minWidth: "0",
+    overflowY: "auto",
   },
   title: {
     fontSize: "28px",
@@ -244,6 +247,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: "14px",
     color: "#374151",
     outline: "none",
+    width: "100%",
+    boxSizing: "border-box",
   },
   roleBox: {
     display: "flex",
@@ -271,6 +276,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     fontWeight: 700,
     fontSize: "15px",
+    width: "100%",
   },
   error: {
     color: "#dc2626",

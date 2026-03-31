@@ -112,7 +112,7 @@ const handleLogin = async (e: React.FormEvent) => {
 
 
 const styles: { [key: string]: React.CSSProperties } = {
-  page: {
+page: {
     minHeight: "100vh",
     background: "#eef2f7",
     display: "flex",
@@ -120,16 +120,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: "center",
     padding: "24px",
   },
+
   wrapper: {
     width: "100%",
     maxWidth: "1000px",
     display: "grid",
-    gridTemplateColumns: "1fr 420px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
     background: "#ffffff",
     borderRadius: "24px",
     overflow: "hidden",
     boxShadow: "0 16px 40px rgba(0,0,0,0.10)",
   },
+
   leftPanel: {
     background: "linear-gradient(135deg, #1d4ed8, #2563eb)",
     color: "white",
@@ -138,16 +140,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: "column",
     justifyContent: "center",
   },
-  brand: {
-    fontSize: "42px",
+brand: {
+    fontSize: "clamp(24px, 5vw, 42px)",
     margin: 0,
     fontWeight: 800,
   },
-  leftTitle: {
-    fontSize: "25px",
+
+leftTitle: {
+    fontSize: "clamp(16px, 3vw, 25px)",
     marginTop: "10px",
     marginBottom: "12px",
   },
+
   leftText: {
     fontSize: "15px",
     lineHeight: 1.7,
