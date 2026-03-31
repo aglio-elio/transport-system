@@ -1,0 +1,296 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+export default function SignupPage() {
+  const router = useRouter();
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState("user");
+  const [adminKey, setAdminKey] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!firstName.trim()) return setError("First name is required.");
+    if (!lastName.trim()) return setError("Last name is required.");
+    if (!username.trim()) return setError("Username is required.");
+    if (!password) return setError("Password is required.");
+    if (!confirmPassword) return setError("Please confirm your password.");
+    if (password !== confirmPassword) return setError("Passwords do not match.");
+
+    if (role === "admin") {
+      if (!adminKey) return setError("Admin key is required.");
+      if (adminKey !== "NIA_ADMIN_PASSWORD") return setError("Invalid admin key.");
+    }
+
+    const fakeEmail = `${username}@moventrax.com`;
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: fakeEmail,
+      password: password,
+    });
+
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+
+    const { error } = await supabase.from("profiles").insert({
+      id: authData.user?.id,
+      first_name: firstName,
+      last_name: lastName,
+      username: username,
+      role: role,
+    });
+
+    if (error) {
+      setError("Error creating account: " + error.message);
+      return;
+    }
+
+    setSuccess("Account created successfully!");
+    setTimeout(() => router.push("/login"), 1000);
+  };
+
+  return (
+    <main style={styles.page}>
+      <div style={styles.wrapper}>
+        <div style={styles.leftPanel}>
+          <h1 style={styles.brand}>MovenTrax</h1>
+          <h2 style={styles.leftTitle}>Create your account</h2>
+          <p style={styles.leftText}>
+            Register as a user to submit transport requests, or as an admin to manage and approve requests.
+          </p>
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.title}>Sign Up</h2>
+          <p style={styles.subtitle}>Fill in your details</p>
+
+          <form onSubmit={handleSignup} style={styles.form}>
+            
+          <input
+          type="text"
+          placeholder="First Name"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          style={styles.input}
+        />
+
+        <input
+          type="text"
+          placeholder="Last Name"
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+          style={styles.input}
+        />
+
+            <input
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              style={styles.input}
+            />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={styles.input}
+            />
+
+            <input
+              type="password"
+              placeholder="Confirm password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              style={styles.input}
+            />
+
+            <div style={styles.roleBox}>
+              <label style={styles.roleLabel}>
+                <input
+                  type="radio"
+                  value="user"
+                  checked={role === "user"}
+                  onChange={() => setRole("user")}
+                />
+                User
+              </label>
+
+              <label style={styles.roleLabel}>
+                <input
+                  type="radio"
+                  value="admin"
+                  checked={role === "admin"}
+                  onChange={() => setRole("admin")}
+                />
+                Admin
+              </label>
+            </div>
+
+            {role === "admin" && (
+              <input
+                type="text"
+                placeholder="Enter admin key"
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                style={styles.input}
+              />
+            )}
+
+            {error && <p style={styles.error}>{error}</p>}
+            {success && <p style={styles.success}>{success}</p>}
+
+            <button type="submit" style={styles.button}>
+              Create Account
+            </button>
+          </form>
+
+          <p style={styles.footer}>
+            Already have an account?{" "}
+            <Link href="/login" style={styles.link}>
+              Login
+            </Link>
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+const styles: { [key: string]: React.CSSProperties } = {
+  page: {
+    minHeight: "100vh",
+    background: "#eef2f7",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: "24px",
+  },
+  wrapper: {
+    width: "100%",
+    maxWidth: "1040px",
+    display: "grid",
+    gridTemplateColumns: "1fr 440px",
+    background: "#ffffff",
+    borderRadius: "24px",
+    overflow: "hidden",
+    boxShadow: "0 16px 40px rgba(0,0,0,0.10)",
+  },
+  leftPanel: {
+    background: "linear-gradient(135deg, #0f172a, #1e293b)",
+    color: "white",
+    padding: "48px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+  },
+  brand: {
+    fontSize: "42px",
+    margin: 0,
+    fontWeight: 800,
+  },
+  leftTitle: {
+    fontSize: "30px",
+    marginTop: "16px",
+    marginBottom: "12px",
+  },
+  leftText: {
+    fontSize: "15px",
+    lineHeight: 1.7,
+    maxWidth: "430px",
+    opacity: 0.95,
+  },
+  card: {
+    padding: "36px 32px",
+    background: "#ffffff",
+  },
+  title: {
+    fontSize: "28px",
+    margin: 0,
+    color: "#111827",
+    fontWeight: 700,
+  },
+  subtitle: {
+    color: "#6b7280",
+    marginTop: "8px",
+    marginBottom: "24px",
+    fontSize: "14px",
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+  },
+  input: {
+    padding: "13px 14px",
+    borderRadius: "12px",
+    border: "1px solid #d1d5db",
+    fontSize: "14px",
+    color: "#374151",
+    outline: "none",
+  },
+  roleBox: {
+    display: "flex",
+    justifyContent: "space-between",
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    padding: "12px 14px",
+  },
+  roleLabel: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+    color: "#374151",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
+  button: {
+    marginTop: "6px",
+    padding: "13px",
+    border: "none",
+    borderRadius: "12px",
+    background: "#16a34a",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "15px",
+  },
+  error: {
+    color: "#dc2626",
+    fontSize: "14px",
+    margin: 0,
+  },
+  success: {
+    color: "#16a34a",
+    fontSize: "14px",
+    margin: 0,
+  },
+  footer: {
+    marginTop: "20px",
+    fontSize: "14px",
+    color: "#4b5563",
+    textAlign: "center",
+  },
+  link: {
+    color: "#2563eb",
+    fontWeight: 700,
+    textDecoration: "none",
+  },
+};
