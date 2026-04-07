@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { Orbitron } from "next/font/google";
+
+const orbitron = Orbitron({
+  weight: "700",
+  subsets: ["latin"],
+});
 
 type RequestItem = {
   id: number;
@@ -18,7 +24,7 @@ type RequestItem = {
   signedTravelOrderData: string;
   driverType: string;
   remarks: string;
-  status: "Pending" | "On Process" | "Approved" | "Declined";
+  status: "Pending" | "On Process" | "Approved" | "Declined" | "Cancelled";
   dateCreated: string;
   vehicle?: string;
   driver?: string;
@@ -59,7 +65,13 @@ export default function DashboardPage() {
 
   const [announcements, setAnnouncements] = useState<any[]>([]);
 
-  const [showAnnouncements, setShowAnnouncements] = useState(true);  
+  const [showAnnouncements, setShowAnnouncements] = useState(false);  
+
+  const [readIds, setReadIds] = useState<number[]>([]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+const [entriesPerPage, setEntriesPerPage] = useState(0);
+
 useEffect(() => {
   const checkUser = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -80,9 +92,15 @@ useEffect(() => {
       return;
     }
 
-    setUser(profile);
-  loadUserRequests(session.user.id);
+setUser(profile);
+loadUserRequests(session.user.id);
 
+const { data: readData } = await supabase
+  .from("read_announcements")
+  .select("announcement_id")
+  .eq("user_id", session.user.id);
+
+if (readData) setReadIds(readData.map((r: any) => r.announcement_id));
 const { data: announcementsData } = await supabase
   .from("announcements")
   .select("*")
@@ -126,18 +144,21 @@ if (announcementsData) setAnnouncements(announcementsData);
   }
 };
 
-  const resetForm = () => {
-    setTransportationRequest(emptyForm.transportationRequest);
-    setDuration(emptyForm.duration);
-    setDestination(emptyForm.destination);
-    setPassengers(emptyForm.passengers);
-    setDeparture(emptyForm.departure);
-    setSignedTravelOrderName(emptyForm.signedTravelOrderName);
-    setSignedTravelOrderData(emptyForm.signedTravelOrderData);
-    setDriverType(emptyForm.driverType);
-    setRemarks(emptyForm.remarks);
-    setEditingId(null);
-  };
+const fileInputRef = useRef<HTMLInputElement>(null);
+
+const resetForm = () => {
+  setTransportationRequest(emptyForm.transportationRequest);
+  setDuration(emptyForm.duration);
+  setDestination(emptyForm.destination);
+  setPassengers(emptyForm.passengers);
+  setDeparture(emptyForm.departure);
+  setSignedTravelOrderName(emptyForm.signedTravelOrderName);
+  setSignedTravelOrderData(emptyForm.signedTravelOrderData);
+  setDriverType(emptyForm.driverType);
+  setRemarks(emptyForm.remarks);
+  setEditingId(null);
+  if (fileInputRef.current) fileInputRef.current.value = "";
+};
 
   const showTempMessage = (text: string) => {
     setMessage(text);
@@ -231,18 +252,22 @@ if (announcementsData) setAnnouncements(announcementsData);
   setRemarks(req.remarks || "");
 };
 
+
 const handleDelete = async (id: number) => {
   if (!user) return;
-  const confirmDelete = window.confirm("Cancel/Delete this request?");
+  const confirmDelete = window.confirm("Are you sure you want to cancel this request?");
   if (!confirmDelete) return;
 
-  const { error } = await supabase.from("requests").delete().eq("id", id);
+  const { error } = await supabase
+    .from("requests")
+    .update({ status: "Cancelled" })
+    .eq("id", id);
 
   if (!error) {
     const { data: { session } } = await supabase.auth.getSession();
     loadUserRequests(session!.user.id);
     if (editingId === id) resetForm();
-    showTempMessage("Request deleted.");
+    showTempMessage("Request has been cancelled.");
   }
 };
 
@@ -251,6 +276,16 @@ const handleDelete = async (id: number) => {
     router.push("/login");
   };
 
+const handleRead = async (id: number) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const { error } = await supabase.from("read_announcements").insert({
+    user_id: session.user.id,
+    announcement_id: id,
+  });
+  if (!error) setReadIds((prev) => [...prev, id]);
+};
+
   const filteredRequests = useMemo(() => {
     return requests.filter((req) =>
       `${req.transportationRequest} ${req.destination} ${req.status} ${req.dateCreated} ${req.driverType} ${req.remarks}`
@@ -258,6 +293,17 @@ const handleDelete = async (id: number) => {
         .includes(search.toLowerCase())
     );
   }, [requests, search]);
+
+const totalPages =
+  entriesPerPage === 0
+    ? 0
+    : Math.ceil(filteredRequests.length / entriesPerPage);
+
+const paginatedRequests = useMemo(() => {
+  if (entriesPerPage === 0) return [];
+  const start = (currentPage - 1) * entriesPerPage;
+  return filteredRequests.slice(start, start + entriesPerPage);
+}, [filteredRequests, currentPage, entriesPerPage]);
 
   const totalRequests = requests.length;
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
@@ -277,7 +323,7 @@ const handleDelete = async (id: number) => {
     <main style={styles.page}>
       <aside style={styles.sidebar}>
         <div>
-          <h2 style={styles.logo}>MovenTrax</h2>
+        <h2 style={styles.brand} className={orbitron.className}>MovenTrax</h2>
 
           <div style={styles.sideUserBox}>
            {/* <p style={styles.sideUserLabel}>Logged in as</p> */}
@@ -290,16 +336,23 @@ const handleDelete = async (id: number) => {
           </div>
         </div>
 
-        <button onClick={handleLogout} style={styles.logoutBtn}>
-          Logout
-        </button>
+          <button
+            onClick={handleLogout}
+            style={styles.logoutBtn}
+            onMouseEnter={e => (e.currentTarget.style.background = "#811010")}
+            onMouseLeave={e => (e.currentTarget.style.background = "#dc2626")}
+            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+          >
+            Logout
+          </button>
       </aside>
 
       <section style={styles.content}>
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>
-              {getGreeting()}, {user?.first_name} {user?.last_name} 
+              {getGreeting()}, {user?.first_name} {user?.last_name}👋
             </h1>
 
             <p style={styles.subtitle}>
@@ -314,8 +367,8 @@ const handleDelete = async (id: number) => {
     <div style={styles.panelLarge}>
   <div style={styles.announcementHeader}>
     <h3 style={styles.panelTitle}>
-      Announcements ({announcements.length })
-      </h3>
+      📢Announcements ({announcements.filter(a => !readIds.includes(a.id)).length})
+    </h3>
 
     <button
       type="button"
@@ -330,14 +383,35 @@ const handleDelete = async (id: number) => {
     <>
       {announcements.length > 0 ? (
         <div style={styles.announcementList}>
-          {announcements.map((item) => (
-            <div key={item.id} style={styles.announcementCard}>
-              <h4 style={styles.announcementTitle}>{item.title}</h4>
+        
+        {announcements.map((item) => {
+          const isRead = readIds.includes(item.id);
+          return (
+            <div key={item.id} style={{
+              ...styles.announcementCard,
+              opacity: isRead ? 0.5 : 1,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <h4 style={styles.announcementTitle}>{item.title}</h4>
+                {!isRead && (
+                  <button
+                    onClick={() => handleRead(item.id)}
+                    style={styles.readBtn}
+                  >
+                    Mark as Read
+                  </button>
+                )}
+                {isRead && (
+                  <span style={{ fontSize: "12px", color: "#94a3b8" }}>Read</span>
+                )}
+              </div>
               <p style={styles.announcementMessage}>{item.message}</p>
               <p style={styles.announcementMeta}>
-                Posted by {item.author} • {new Date(item.created_at).toLocaleString()}              </p>
+                Posted by {item.author} • {new Date(item.created_at).toLocaleString()}
+              </p>
             </div>
-          ))}
+          );
+        })}
         </div>
       ) : (
         <p style={styles.emptyText}>No announcements available.</p>
@@ -442,6 +516,7 @@ const handleDelete = async (id: number) => {
               <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
                 <label style={styles.label}>Signed Travel Order (Picture)</label>
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept="image/*"
                   onChange={handleFileChange}
@@ -463,18 +538,29 @@ const handleDelete = async (id: number) => {
               </div>
 
               <div style={styles.actionRow}>
-                <button type="submit" style={styles.primaryBtn}>
-                  {editingId !== null ? "Update Request" : "Submit"}
-                </button>
+              <button
+                type="submit"
+                style={styles.primaryBtn}
+                onMouseEnter={e => (e.currentTarget.style.background = "#0a2b86")}
+                onMouseLeave={e => (e.currentTarget.style.background = "#2563eb")}
+                onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+                onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+              >
+                {editingId !== null ? "Update Request" : "Submit"}
+              </button>
 
                 {editingId !== null && (
-                  <button
-                    type="button"
-                    onClick={resetForm}
-                    style={styles.secondaryBtn}
-                  >
-                    Cancel Edit
-                  </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  style={styles.secondaryBtn}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#777a7f")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "#e5e7eb")}
+                  onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+                  onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                >
+                  Cancel Edit
+                </button>
                 )}
               </div>
             </form>
@@ -524,17 +610,33 @@ const handleDelete = async (id: number) => {
               type="text"
               placeholder="Search request, destination, status, or date"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               style={styles.searchInput}
             />
           </div>
+            
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#64748b", marginBottom: "12px" }}>
+                Show
+                <select
+                  value={entriesPerPage}
+                  onChange={(e) => { setEntriesPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                  style={{ padding: "6px 10px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px", color: "#374151", outline: "none" }}
+                >
+                  <option value={0}>Select</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+                entries per page
+              </div>
 
-            <div style={{
-            ...styles.tableWrapper,
-            maxHeight: "480px",
-            overflowY: "auto",
-            paddingRight: "6px",
-          }}>
+              <div style={{
+                ...styles.tableWrapper,
+                maxHeight: "480px",
+                overflowY: "auto",
+                paddingRight: "6px",
+              }}>
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -546,36 +648,50 @@ const handleDelete = async (id: number) => {
                   <th style={styles.th}>Status</th>
                   <th style={styles.th}>Driver / Vehicle Info</th>
                   <th style={styles.th}>Actions</th>
+                  
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map((req) => (
+                {paginatedRequests.map((req) => (
                   <tr key={req.id}>
                     <td style={styles.td}>
                       <div style={styles.requestMain}>{req.transportationRequest}</div>
-                      <div style={styles.requestSub}>{req.dateCreated}</div>
-                    </td>
+                        <div style={styles.requestSub}>
+                          {new Date(req.dateCreated).toLocaleString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </div>   
+                 </td>
                     <td style={styles.td}>{req.destination}</td>
                     <td style={styles.td}>{req.passengers}</td>
                     <td style={styles.td}>{formatDeparture(req.departure)}</td>
                     <td style={styles.td}>{req.driverType}</td>
                     <td style={styles.td}>
                       <span
-                        style={{
-                          ...styles.statusBadge,
-                          ...(req.status === "Approved"
-                            ? styles.approved
-                            : req.status === "Declined"
-                            ? styles.declined
-                            : req.status === "On Process"
-                            ? styles.onProcess
-                            : styles.pending),
-                        }}
-                      >
+                      
+                      style={{
+                        ...styles.statusBadge,
+                        ...(req.status === "Approved"
+                          ? styles.approved
+                          : req.status === "Declined"
+                          ? styles.declined
+                          : req.status === "On Process"
+                          ? styles.onProcess
+                          : req.status === "Cancelled"
+                          ? styles.cancelled
+                          : styles.pending),
+                      }}
+                                            >
                         {req.status}
                       </span>
                     </td>
                     <td style={styles.td}>
+                    
                       {req.status === "Approved" ? (
                         <div style={styles.assignmentBox}>
                           <div><strong>Vehicle:</strong> {req.vehicle || "To be assigned"}</div>
@@ -586,26 +702,59 @@ const handleDelete = async (id: number) => {
                         <span style={styles.declineText}>
                           Due to influx of requests, this request can no longer proceed.
                         </span>
+                      ) : req.status === "Cancelled" ? (
+                        <span style={{ fontSize: "13px", color: "#dc2626" }}>
+                          This request was cancelled.
+                        </span>
                       ) : (
                         <span style={styles.pendingText}>
                           Your request is {req.status.toLowerCase()}.
                         </span>
                       )}
+
+
                     </td>
+                    
                     <td style={styles.td}>
                       <div style={styles.actionGroup}>
-                        <button
-                          onClick={() => handleEdit(req)}
-                          style={styles.editBtn}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(req.id)}
-                          style={styles.deleteBtn}
-                        >
-                          Remove
-                        </button>
+                        {req.status === "Pending" && (
+                          <>
+                          <button
+                            onClick={() => handleEdit(req)}
+                            style={styles.editBtn}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#0a2b86")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "#2563eb")}
+                            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+                            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                          >
+                            Edit
+                          </button>
+                                                                              
+                          <button
+                            onClick={() => handleDelete(req.id)}
+                            style={styles.deleteBtn}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#811010")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "#dc2626")}
+                            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+                            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+                          >
+                            Cancel Request
+                          </button>
+
+                          </>
+                        )}
+                        {req.status === "On Process" && (
+                          <span style={{ fontSize: "12px", color: "#1d4ed8" }}>Under review</span>
+                        )}
+                        {req.status === "Approved" && (
+                          <span style={{ fontSize: "12px", color: "#16a34a" }}>No actions available</span>
+                        )}
+                        {req.status === "Declined" && (
+                          <span style={{ fontSize: "12px", color: "#94a3b8" }}>No actions available</span>
+                        )}
+                        {req.status === "Cancelled" && (
+                          <span style={{ fontSize: "12px", color: "#dc2626" }}>Request cancelled</span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -616,6 +765,29 @@ const handleDelete = async (id: number) => {
             {filteredRequests.length === 0 && (
               <p style={styles.emptyText}>No transportation requests found.</p>
             )}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+            <span style={{ fontSize: "13px", color: "#64748b" }}>
+              Showing {filteredRequests.length === 0 ? 0 : (currentPage - 1) * entriesPerPage + 1} to {Math.min(currentPage * entriesPerPage, filteredRequests.length)} of {filteredRequests.length} entries
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === 1 ? "#cbd5e1" : "#374151", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "13px" }}>«</button>
+              <button onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} disabled={currentPage === 1} style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === 1 ? "#cbd5e1" : "#374151", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "13px" }}>‹</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                const showPage = page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
+                const showLeftDots = page === currentPage - 2 && currentPage > 3;
+                const showRightDots = page === currentPage + 2 && currentPage < totalPages - 2;
+                if (showLeftDots) return <span key={`l${page}`} style={{ padding: "5px 6px", fontSize: "13px", color: "#94a3b8" }}>...</span>;
+                if (showRightDots) return <span key={`r${page}`} style={{ padding: "5px 6px", fontSize: "13px", color: "#94a3b8" }}>...</span>;
+                if (!showPage) return null;
+                return (
+                  <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid #e5e7eb", background: currentPage === page ? "#2563eb" : "white", color: currentPage === page ? "white" : "#374151", cursor: "pointer", fontWeight: currentPage === page ? 700 : 400, fontSize: "13px" }}>{page}</button>
+                );
+              })}
+              <button onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === totalPages ? "#cbd5e1" : "#374151", cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: "13px" }}>›</button>
+              <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === totalPages ? "#cbd5e1" : "#374151", cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: "13px" }}>»</button>
+            </div>
           </div>
         </div>
 
@@ -699,6 +871,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "white",
     cursor: "pointer",
     fontWeight: 700,
+    transition: "background 0.15s, transform 0.1s",
+
   },
   content: {
     padding: "28px",
@@ -709,6 +883,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: "20px",
   },
   title: {
+    fontWeight: 700,
     margin: 0,
     fontSize: "30px",
     color: "#0f172a",
@@ -753,9 +928,10 @@ const styles: { [key: string]: React.CSSProperties } = {
 
   mainGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+    gridTemplateColumns: "2fr 1fr",
     gap: "16px",
     marginBottom: "20px",
+    height: "inline-block",
   },
   panelLarge: {
     background: "white",
@@ -766,12 +942,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   panelSmall: {
     background: "white",
-    borderRadius: "18px",
-    padding: "20px",
+    borderRadius: "10px",
+    padding: "10px",
     boxShadow: "0 8px 20px rgba(0,0,0,0.05)",
-    height: "fit-content",
+    height: "inline-block",
   },
   panelTitle: {
+    fontWeight: 700,
     marginTop: 0,
     marginBottom: "14px",
     color: "#0f172a",
@@ -839,6 +1016,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "white",
     fontWeight: 700,
     cursor: "pointer",
+    transition: "background 0.15s, transform 0.1s",
+
   },
   secondaryBtn: {
     padding: "13px 18px",
@@ -848,6 +1027,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#111827",
     fontWeight: 700,
     cursor: "pointer",
+    transition: "background 0.15s, transform 0.1s",
+
   },
   summaryList: {
     display: "flex",
@@ -1003,6 +1184,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "white",
     cursor: "pointer",
     fontWeight: 700,
+    transition: "background 0.15s, transform 0.1s",
+
   },
   deleteBtn: {
     padding: "8px 12px",
@@ -1012,6 +1195,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "white",
     cursor: "pointer",
     fontWeight: 700,
+    transition: "background 0.15s, transform 0.1s",
+
   },
   emptyText: {
     color: "#64748b",
@@ -1078,4 +1263,26 @@ toggleBtn: {
   fontSize: "13px",
 },
 
+cancelled: {
+  background: "#f1f5f9",
+  color: "#475569",
+},
+
+readBtn: {
+  padding: "5px 12px",
+  borderRadius: "8px",
+  border: "none",
+  background: "#f1f5f9",
+  color: "#475569",
+  cursor: "pointer",
+  fontWeight: 600,
+  fontSize: "12px",
+  whiteSpace: "nowrap" as const,
+},
+
+brand: {
+    fontSize: "clamp(24px, 5vw, 28px)",
+    margin: 0,
+    fontWeight: 900,
+  },
 };

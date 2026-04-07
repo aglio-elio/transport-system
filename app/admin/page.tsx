@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { Orbitron } from "next/font/google";
+
+const orbitron = Orbitron({
+  weight: "700",
+  subsets: ["latin"],
+});
 
 type RequestItem = {
   firstName: string;
@@ -59,9 +65,13 @@ export default function AdminPage() {
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
 
-
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const [showHistoryFilters, setShowHistoryFilters] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [entriesPerPage, setEntriesPerPage] = useState(0);
+
 
 useEffect(() => {
   const checkAdmin = async () => {
@@ -178,14 +188,16 @@ const updateStatus = async (id: number, status: RequestItem["status"]) => {
 };
     
 
-  const handleApprove = (req: RequestItem) => {
-    if (!req.driver?.trim() || !req.vehicle?.trim() || !req.contact?.trim()) {
-      showTempMessage("Please fill in driver, vehicle, and contact before approving.");
-      return;
-    }
 
-    updateStatus(req.id, "Approved");
-  };
+const handleApprove = (req: RequestItem) => {
+  if (!req.driver?.trim() || !req.vehicle?.trim()) {
+    showTempMessage("Please fill in driver and vehicle before approving.");
+    return;
+  }
+  updateStatus(req.id, "Approved");
+};
+
+  
 const handleDelete = async (id: number) => {
   const confirmDelete = window.confirm("Delete this request permanently?");
   if (!confirmDelete) return;
@@ -262,8 +274,7 @@ const filteredActivityLogs = useMemo(() => {
     const matchesLocation =
       !filterLocation.trim() ||
       log.details.toLowerCase().includes(`destination: ${filterLocation.toLowerCase()}`);
-
-    let matchesDate = true;
+        let matchesDate = true;
 
     if (filterStartDate && filterEndDate) {
       const start = new Date(filterStartDate);
@@ -298,6 +309,15 @@ const filteredActivityLogs = useMemo(() => {
         .includes(search.toLowerCase())
     );
   }, [requests, search]);
+  const totalPages = entriesPerPage === 0 
+  ? 1 
+  : Math.ceil(filteredRequests.length / entriesPerPage);
+
+  const paginatedRequests = useMemo(() => {
+    if (entriesPerPage === 0) return [];
+    const start = (currentPage - 1) * entriesPerPage;
+    return filteredRequests.slice(start, start + entriesPerPage);
+  }, [filteredRequests, currentPage, entriesPerPage]);
 
   const totalRequests = requests.length;
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
@@ -319,29 +339,133 @@ const handleDownloadFilteredHistory = () => {
     return;
   }
 
-  const headers = ["Date", "Type", "Action", "Details", "Admin"];
+  const parseDetails = (details: string) => {
+    const lines = details.split("\n");
+    const map: Record<string, string> = {};
+    lines.forEach((line) => {
+      const [key, ...rest] = line.split(": ");
+      if (key && rest.length) map[key.trim()] = rest.join(": ").trim();
+    });
+    return map;
+  };
 
-  const rows = filteredActivityLogs.map((log) => [
-    new Date(log.date).toLocaleString(),
-    log.type,
-    log.action,
-    log.details.replace(/\n/g, " | "),
-    log.adminName,
-  ]);
+  const rows = filteredActivityLogs.map((log, i) => {
+    const d = parseDetails(log.details);
+    return `
+      <div class="voucher">
+        <div class="voucher-header">
+          <div class="header-left">
+            <p class="republic">Republic of the Philippines</p>
+            <p class="agency">National Irrigation Administration</p>
+            <p class="region">REGIONAL OFFICE NO. I (ILOCOS REGION)</p>
+          </div>
+          <div class="header-right">
+            <p class="doc-label">TRANSPORTATION REQUEST RECORD</p>
+            <p class="doc-no">Record No. ${String(i + 1).padStart(4, "0")}</p>
+            <p class="doc-date">Date: ${new Date(log.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>
+          </div>
+        </div>
 
-  const csvContent = [
-    headers.join(","),
-    ...rows.map((row) =>
-      row.map((item) => `"${String(item).replace(/"/g, '""')}"`).join(",")
-    ),
-  ].join("\n");
+        <div class="divider"></div>
 
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        <table class="info-table">
+          <tr>
+            <td class="label">Requester</td>
+            <td class="value">${d["Requester"] || "-"}</td>
+            <td class="label">Status / Action</td>
+            <td class="value">${log.action}</td>
+          </tr>
+          <tr>
+            <td class="label">Destination</td>
+            <td class="value">${d["Destination"] || "-"}</td>
+            <td class="label">Departure</td>
+            <td class="value">${d["Departure"] || "-"}</td>
+          </tr>
+          <tr>
+            <td class="label">Duration</td>
+            <td class="value">${d["Duration"] || "-"}</td>
+            <td class="label">Driver Type</td>
+            <td class="value">${d["Driver Type"] || "-"}</td>
+          </tr>
+          <tr>
+            <td class="label">Passengers</td>
+            <td class="value">${d["Passengers"] || "-"}</td>
+            <td class="label">Driver</td>
+            <td class="value">${d["Driver"] || "-"}</td>
+          </tr>
+          <tr>
+            <td class="label">Vehicle</td>
+            <td class="value">${d["Vehicle"] || "-"}</td>
+            <td class="label">Processed By</td>
+            <td class="value">${log.adminName}</td>
+          </tr>
+        </table>
+
+        <div class="divider"></div>
+
+        <div class="footer-row">
+          <div class="footer-box">
+            <p class="footer-label">Certified: Transportation request processed and verified.</p>
+            <div class="signature-line"></div>
+            <p class="signer">${log.adminName}</p>
+            <p class="signer-title">Administrator</p>
+          </div>
+          <div class="footer-box">
+            <p class="footer-label">Date Processed:</p>
+            <p class="date-val">${new Date(log.date).toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('<div class="page-break"></div>');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8"/>
+      <title>Transportation Activity Records</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "Times New Roman", Times, serif; font-size: 11pt; color: #000; background: #fff; }
+        .voucher { width: 720px; margin: 40px auto; padding: 36px 48px; border: 1.5px solid #000; }
+        .voucher-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .header-left { text-align: left; }
+        .republic { font-size: 10pt; }
+        .agency { font-size: 12pt; font-weight: bold; }
+        .region { font-size: 10pt; }
+        .header-right { text-align: right; }
+        .doc-label { font-size: 13pt; font-weight: bold; letter-spacing: 0.5px; }
+        .doc-no, .doc-date { font-size: 10pt; margin-top: 4px; }
+        .divider { border-top: 1.5px solid #000; margin: 12px 0; }
+        .info-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+        .info-table td { padding: 7px 10px; border: 1px solid #000; font-size: 11pt; vertical-align: top; }
+        .label { background: #f0f0f0; font-weight: bold; width: 18%; white-space: nowrap; }
+        .value { width: 32%; }
+        .footer-row { display: flex; justify-content: space-between; gap: 32px; margin-top: 20px; }
+        .footer-box { flex: 1; }
+        .footer-label { font-size: 10pt; font-style: italic; margin-bottom: 28px; }
+        .signature-line { border-top: 1px solid #000; width: 70%; margin-bottom: 4px; }
+        .signer { font-weight: bold; font-size: 11pt; }
+        .signer-title { font-size: 10pt; }
+        .date-val { font-size: 11pt; font-weight: bold; margin-top: 8px; }
+        .page-break { page-break-after: always; margin: 40px 0; border-top: 2px dashed #ccc; }
+        @media print {
+          .voucher { margin: 0 auto; border: 1.5px solid #000; }
+          .page-break { page-break-after: always; border: none; margin: 0; }
+        }
+      </style>
+    </head>
+    <body>${rows}</body>
+    </html>
+  `;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", "filtered-activity-history.csv");
+  link.setAttribute("download", "transportation-activity-records.html");
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -377,7 +501,7 @@ const handlePostAnnouncement = async () => {
     <main style={styles.page}>
       <aside style={styles.sidebar}>
         <div>
-          <h2 style={styles.logo}>MovenTrax</h2>
+<h2 style={styles.brand} className={orbitron.className}>MovenTrax</h2>
 
           <div style={styles.sideUserBox}>
             <p style={styles.sideUserLabel}>Administrator</p>
@@ -411,9 +535,16 @@ const handlePostAnnouncement = async () => {
               </div>
         </div>
 
-        <button onClick={handleLogout} style={styles.logoutBtn}>
-          Logout
-        </button>
+          <button
+            onClick={handleLogout}
+            style={styles.logoutBtn}
+            onMouseEnter={e => (e.currentTarget.style.background = "#811010")}
+            onMouseLeave={e => (e.currentTarget.style.background = "#dc2626")}
+            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+          >
+            Logout
+          </button>
       </aside>
           
 
@@ -432,8 +563,7 @@ const handlePostAnnouncement = async () => {
           </div>
         </div>
 
-        {message && <div style={styles.alertBox}>{message}</div>}
-
+            
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
             <p style={styles.statLabel}>Total Requests</p>
@@ -466,41 +596,94 @@ const handlePostAnnouncement = async () => {
           style={styles.input}
         />
 
-        <textarea
-          placeholder="Write announcement here"
-          value={announcementMessage}
-          onChange={(e) => setAnnouncementMessage(e.target.value)}
-          style={styles.textarea}
-        />
+          <textarea
+            placeholder="Write announcement here"
+            value={announcementMessage}
+            onChange={(e) => {
+              setAnnouncementMessage(e.target.value);
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = `${el.scrollHeight}px`;
+            }}
+            style={{
+              ...styles.textarea,
+              minHeight: "60px",
+              height: "60px",
+              maxHeight: "300px",
+              resize: "none",
+              overflow: "hidden",
+            }}
+          />
 
-        <button onClick={handlePostAnnouncement} style={styles.approveBtn}>
+        <button 
+        onClick={handlePostAnnouncement}
+         style={styles.approveBtn}
+          onMouseEnter={e => (e.currentTarget.style.background = "#064e32")}
+          onMouseLeave={e => (e.currentTarget.style.background = "#16a34a")}
+          onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+         onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
+          >
           Post Announcement
         </button>
       </div>
     </div>
 
-<div style={styles.panel}>
-          <div style={styles.searchRow}>
-            <h3 style={styles.panelTitle}>All Transportation Requests</h3>
-            <input
-              type="text"
-              placeholder="Search user, destination, request, status, or date"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={styles.searchInput}
-            />
-          </div>
-        </div>
 
+            {message && (
+              <div style={{
+                ...styles.alertBox,
+                background: message.toLowerCase().includes("please") ? "#fef2f2" : "#dbeafe",
+                color: message.toLowerCase().includes("please") ? "#dc2626" : "#1d4ed8",
+                border: message.toLowerCase().includes("please") ? "1px solid #fecaca" : "1px solid #bfdbfe",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+              }}>
+                <span style={{ fontSize: "18px" }}>
+                  {message.toLowerCase().includes("please") ? "⚠️" : "✅"}
+                </span>
+                {message}
+              </div>
+            )}
 
+<div style={styles.tablePanel}>
+  <div style={styles.searchRow}>
+    <h3 style={styles.panelTitle}>All Transportation Requests</h3>
+    <input
+      type="text"
+      placeholder="Search user, destination, request, status, or date"
+      value={search}
+      onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}      style={styles.searchInput}
+    />
+  </div>
 
-        <div style={styles.tablePanel}>
-          <div style={{
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 12px" }}>
+  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#64748b" }}>
+    Show
+      <select
+        value={entriesPerPage}
+        onChange={(e) => { setEntriesPerPage(Number(e.target.value)); setCurrentPage(1); }}
+        style={{ padding: "6px 10px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px", color: "#374151", outline: "none" }}
+      >
+        <option value={0}>Select</option>
+        <option value={5}>5</option>
+        <option value={10}>10</option>
+        <option value={25}>25</option>
+        <option value={50}>50</option>
+      </select>
+      entries per page
+  </div>
+
+</div>
+
+            <div style={{
             ...styles.tableWrapper,
             maxHeight: "480px",
             overflowY: "auto",
-            paddingRight: "6px",
+            paddingRight: "6px", 
           }}>
+            
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -513,13 +696,22 @@ const handlePostAnnouncement = async () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map((req) => (
+                {paginatedRequests.map((req) => (
                   <tr key={req.id}>
                     <td style={styles.td}>
                       <div style={styles.requestMain}>{req.firstName} {req.lastName}</div>
                       <div style={styles.requestSub}>@{req.username}</div>
-                      <div style={styles.requestSub}>{req.dateCreated}</div>
-                    </td>
+                        
+                        <div style={styles.requestSub}>
+                          {new Date(req.dateCreated).toLocaleString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </div>                    </td>
 
                     
                     <td style={styles.td}>
@@ -540,7 +732,9 @@ const handlePostAnnouncement = async () => {
                           <img
                             src={req.signedTravelOrderData}
                             alt={req.signedTravelOrderName || "Signed Travel Order"}
-                            style={styles.imagePreview}
+                            style={{ ...styles.imagePreview, cursor: "pointer" }}
+                            onClick={() => setPreviewImage(req.signedTravelOrderData)}
+                            title="Click to view full image"
                           />
                           <p style={styles.fileText}>
                             {req.signedTravelOrderName || "Uploaded image"}
@@ -573,15 +767,7 @@ const handlePostAnnouncement = async () => {
                           style={styles.smallInput}
                         />
 
-                        <input
-                          type="text"
-                          placeholder="Contact #"
-                          value={req.contact || ""}
-                          onChange={(e) =>
-                            updateRequestField(req.id, "contact", e.target.value)
-                          }
-                          style={styles.smallInput}
-                        />
+
                       </div>
                     </td>
 
@@ -618,16 +804,14 @@ const handlePostAnnouncement = async () => {
 
                     <td style={styles.td}>
                       <div style={styles.actionGroup}>
-                        <button
-                          onClick={() => updateStatus(req.id, "Pending")}
-                          style={styles.pendingBtn}
-                        >
-                          Pending
-                        </button>
 
                         <button
                           onClick={() => updateStatus(req.id, "On Process")}
                           style={styles.processBtn}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#0a2b86")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "#2563eb")}
+                            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+                            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
                         >
                           On Process
                         </button>
@@ -635,6 +819,10 @@ const handlePostAnnouncement = async () => {
                         <button
                           onClick={() => handleApprove(req)}
                           style={styles.approveBtn}
+                           onMouseEnter={e => (e.currentTarget.style.background = "#064e32")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "#16a34a")}
+                            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+                            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
                         >
                           Approve
                         </button>
@@ -642,16 +830,14 @@ const handlePostAnnouncement = async () => {
                         <button
                           onClick={() => updateStatus(req.id, "Declined")}
                           style={styles.rejectBtn}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#811010")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "#dc2626")}
+                            onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+                            onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
                         >
                           Decline
                         </button>
 
-                        <button
-                          onClick={() => handleDelete(req.id)}
-                          style={styles.deleteBtn}
-                        >
-                          Remove
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -662,8 +848,61 @@ const handlePostAnnouncement = async () => {
             {filteredRequests.length === 0 && (
               <p style={styles.emptyText}>No transportation requests found.</p>
             )}
+          </div> {/* closes tableWrapper */}
+
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+            <span style={{ fontSize: "13px", color: "#64748b" }}>
+              Showing {filteredRequests.length === 0 ? 0 : (currentPage - 1) * entriesPerPage + 1} to {Math.min(currentPage * entriesPerPage, filteredRequests.length)} of {filteredRequests.length} entries
+            </span>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === 1 ? "#cbd5e1" : "#374151", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "13px" }}
+              >«</button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === 1 ? "#cbd5e1" : "#374151", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "13px" }}
+              >‹</button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                const showPage = page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
+                const showLeftDots = page === currentPage - 2 && currentPage > 3;
+                const showRightDots = page === currentPage + 2 && currentPage < totalPages - 2;
+
+                if (showLeftDots) return <span key={`l${page}`} style={{ padding: "5px 6px", fontSize: "13px", color: "#94a3b8" }}>...</span>;
+                if (showRightDots) return <span key={`r${page}`} style={{ padding: "5px 6px", fontSize: "13px", color: "#94a3b8" }}>...</span>;
+                if (!showPage) return null;
+
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid #e5e7eb", background: currentPage === page ? "#2563eb" : "white", color: currentPage === page ? "white" : "#374151", cursor: "pointer", fontWeight: currentPage === page ? 700 : 400, fontSize: "13px" }}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === totalPages ? "#cbd5e1" : "#374151", cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: "13px" }}
+              >›</button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                style={{ padding: "5px 9px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: currentPage === totalPages ? "#cbd5e1" : "#374151", cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: "13px" }}
+              >»</button>
+            </div>
           </div>
-        </div>
+
+    
+        </div> {/* closes tablePanel */}
 
         <div style={styles.footerNote}>
           Make sure assignment details are complete before approving a request.
@@ -746,6 +985,10 @@ const handlePostAnnouncement = async () => {
       <button
         onClick={handleDownloadFilteredHistory}
         style={styles.approveBtn}
+          onMouseEnter={e => (e.currentTarget.style.background = "#064e32")}
+          onMouseLeave={e => (e.currentTarget.style.background = "#16a34a")}
+          onMouseDown={e => (e.currentTarget.style.transform = "scale(0.95)")}
+         onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
       >
         Download
       </button>
@@ -759,6 +1002,10 @@ const handlePostAnnouncement = async () => {
           setFilterEndDate("");
         }}
         style={styles.clearBtn}
+         onMouseEnter={e => (e.currentTarget.style.background = "#9aa1ac")}
+         onMouseLeave={e => (e.currentTarget.style.background = "#e5e7eb")}
+         onMouseDown={e => (e.currentTarget.style.transform = "scale(0.97)")}
+         onMouseUp={e => (e.currentTarget.style.transform = "scale(1)")}
       >
         Clear
       </button>
@@ -769,9 +1016,10 @@ const handlePostAnnouncement = async () => {
   <div
     style={{
       ...styles.tableWrapper,
-      maxHeight: "400px",
+      maxHeight: "calc(100vh - 320px)", 
       overflowY: "auto",
       paddingRight: "6px",
+      
     }}
   >
     <table style={styles.table}>
@@ -807,7 +1055,53 @@ const handlePostAnnouncement = async () => {
 
   </section>
 )}
-  
+      {previewImage && (
+  <div
+    onClick={() => setPreviewImage(null)}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.8)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+      cursor: "zoom-out",
+    }}
+  >
+    <img
+      src={previewImage}
+      alt="Full preview"
+      style={{
+        maxWidth: "90vw",
+        maxHeight: "90vh",
+        borderRadius: "12px",
+        objectFit: "contain",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    />
+    <button
+      onClick={() => setPreviewImage(null)}
+      style={{
+        position: "fixed",
+        top: "20px",
+        right: "24px",
+        background: "white",
+        border: "none",
+        borderRadius: "50%",
+        width: "36px",
+        height: "36px",
+        fontSize: "18px",
+        cursor: "pointer",
+        fontWeight: 700,
+        color: "#111827",
+      }}
+    >
+      ✕
+    </button>
+  </div>
+)}
     </main>
   );
 }
@@ -885,18 +1179,23 @@ page: {
 
   content: {
     padding: "28px",
-    minWidth: "0",
-    overflowX: "auto",
+    width: "100%",
+    maxWidth: "100%",
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
   
   },
   header: {
     marginBottom: "20px",
   },
-  title: {
+title: {
+    fontWeight: 700,
     margin: 0,
     fontSize: "30px",
     color: "#0f172a",
-  },
+},
+
   subtitle: {
     marginTop: "8px",
     color: "#64748b",
@@ -938,8 +1237,10 @@ statsGrid: {
     padding: "20px",
     boxShadow: "0 8px 20px rgba(0,0,0,0.05)",
     marginBottom: "20px",
+    width: "100%",
   },
   panelTitle: {
+    fontWeight: 700,
     margin: 0,
     color: "#374151",
     fontSize: "18px",
@@ -1229,5 +1530,10 @@ clearBtn: {
   cursor: "pointer",
   fontWeight: 700,
 },
+brand: {
+    fontSize: "clamp(24px, 5vw, 28px)",
+    margin: 0,
+    fontWeight: 900,
+  },
 
 };

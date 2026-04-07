@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+import { Orbitron } from "next/font/google";
+
+const orbitron = Orbitron({
+  weight: "700",
+  subsets: ["latin"],
+});
+
 export default function SignupPage() {
   const router = useRouter();
 
@@ -18,25 +25,30 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  
+
 const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
+    setIsSubmitting(true);
 
-    if (!firstName.trim()) return setError("First name is required.");
-    if (!lastName.trim()) return setError("Last name is required.");
-    if (!username.trim()) return setError("Username is required.");
-    if (!password) return setError("Password is required.");
-    if (!confirmPassword) return setError("Please confirm your password.");
-    if (password !== confirmPassword) return setError("Passwords do not match.");
-
-    if (role === "admin") {
-      if (!adminKey) return setError("Admin key is required.");
-      if (adminKey !== "NIA_ADMIN_PASSWORD") return setError("Invalid admin key.");
-    }
+if (!firstName.trim()) { setError("First name is required."); setIsSubmitting(false); return; }
+if (!lastName.trim()) { setError("Last name is required."); setIsSubmitting(false); return; }
+if (!username.trim()) { setError("Username is required."); setIsSubmitting(false); return; }
+if (!password) { setError("Password is required."); setIsSubmitting(false); return; }
+if (!confirmPassword) { setError("Please confirm your password."); setIsSubmitting(false); return; }
+if (password !== confirmPassword) { setError("Passwords do not match."); setIsSubmitting(false); return; }
+if (role === "admin") {
+  if (!adminKey) { setError("Admin key is required."); setIsSubmitting(false); return; }
+  if (adminKey !== "NIA_ADMIN_PASSWORD") { setError("Invalid admin key."); setIsSubmitting(false); return; }
+}
 
     const fakeEmail = `${username}@moventrax.com`;
 
+    try{
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: fakeEmail,
       password: password,
@@ -62,13 +74,20 @@ const handleSignup = async (e: React.FormEvent) => {
 
     setSuccess("Account created successfully!");
     setTimeout(() => router.push("/login"), 1000);
-  };
+}
+catch (err) {
+    console.error("Signup error:", err);
+    setError("Something went wrong. Please try again.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <main style={styles.page}>
       <div style={styles.wrapper}>
         <div style={styles.leftPanel}>
-          <h1 style={styles.brand}>MovenTrax</h1>
+        <h1 style={styles.brand} className={orbitron.className}>MovenTrax</h1>
           <h2 style={styles.leftTitle}>Create your account</h2>
           <p style={styles.leftText}>
             Register as a user to submit transport requests, or as an admin to manage and approve requests.
@@ -156,16 +175,57 @@ const handleSignup = async (e: React.FormEvent) => {
             {error && <p style={styles.error}>{error}</p>}
             {success && <p style={styles.success}>{success}</p>}
 
-            <button type="submit" style={styles.button}>
-              Create Account
-            </button>
+          <button
+            type="submit"
+            style={{
+              ...styles.button,
+              opacity: isSubmitting ? 0.7 : 1,
+              cursor: isSubmitting ? "not-allowed" : "pointer",
+              fontFamily: "var(--font-geist-sans)",
+            }}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  style={{ animation: "spin 0.8s linear infinite" }}
+                >
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+                Creating account...
+              </span>
+            ) : (
+              "Create Account"
+            )}
+          </button>
+
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
           </form>
 
           <p style={styles.footer}>
             Already have an account?{" "}
-            <Link href="/login" style={styles.link}>
-              Login
-            </Link>
+
+          <Link
+            href="/login"
+            style={styles.link}
+            onMouseEnter={e => (e.currentTarget.style.color = "#0e9b3a")}
+            onMouseLeave={e => (e.currentTarget.style.color = "#2563eb")}
+            onMouseDown={e => (e.currentTarget.style.color = "#1e40af")}
+            onMouseUp={e => (e.currentTarget.style.color = "#1d4ed8")}
+          >
+            Login
+          </Link>
           </p>
         </div>
       </div>
